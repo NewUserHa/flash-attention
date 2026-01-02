@@ -1,4 +1,4 @@
-name: Build wheels (Windows/Linux)
+name: Build wheels Windows
 
 on:
   workflow_dispatch:
