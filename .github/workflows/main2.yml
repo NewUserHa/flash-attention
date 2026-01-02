@@ -1,0 +1,53 @@
+name: Build wheels (Windows/Linux)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs-on:
+        description: "运行环境 (例如: windows-2022, ubuntu-22.04)"
+        required: true
+        type: string
+        default: windows-2022  # 默认改为 Windows
+      python-version:
+        description: "Python 版本"
+        required: true
+        type: string
+        default: "3.13"
+      cuda-version:
+        description: "CUDA 版本 (例如: 12.1.0)"
+        required: true
+        type: string
+        default: "12.6"
+      torch-version:
+        description: "PyTorch 版本"
+        required: true
+        type: string
+        default: "2.9.1"
+      cxx11_abi:
+        description: "是否开启 C++11 ABI (Windows 通常设为 FALSE)"
+        required: true
+        type: string
+        default: "FALSE" # Windows 下 PyTorch 官方包通常不使用 cxx11_abi
+      upload-to-release:
+        description: "是否上传到 Release"
+        required: false
+        type: boolean
+        default: false
+      release-version:
+        description: "目标 Release Tag (例如: v2.7.0)"
+        required: false
+        type: string
+
+jobs:
+  build-wheels:
+    # 这里的 uses 指向你修改后的 Windows 版子工作流文件
+    uses: ./.github/workflows/_build_windows.yml 
+    with:
+      runs-on: ${{ inputs.runs-on }}
+      python-version: ${{ inputs.python-version }}
+      cuda-version: ${{ inputs.cuda-version }}
+      torch-version: ${{ inputs.torch-version }}
+      cxx11_abi: ${{ inputs.cxx11_abi }}
+      upload-to-release: ${{ inputs.upload-to-release }}
+      release-version: ${{ inputs.release-version }}
+    secrets: inherit # 必须添加，否则子流无法读取 GITHUB_TOKEN 进行上传
