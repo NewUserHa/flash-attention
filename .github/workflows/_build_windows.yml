@@ -80,12 +80,14 @@ jobs:
       - name: Build wheel (Windows Special)
         id: build_wheel
         run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -value 1
+
           # 1. 设置 Windows 环境变量
           $env:CUDA_HOME = $env:CUDA_PATH
           $env:MAX_JOBS = "2" # Windows 显存管理更碎，建议限制并发
           $env:FLASH_ATTENTION_FORCE_BUILD = "TRUE"
           $env:FLASH_ATTENTION_FORCE_CXX11_ABI = "${{ inputs.cxx11_abi }}"
-          
+
           # 2. 解决 Windows 下的编译常见报错
           # 有些库在 Windows 下需要明确指定编译器路径
           $env:CC = "cl.exe"
