@@ -1,0 +1,83 @@
+name: ~Build Windows wheel template
+
+on:
+  workflow_call:
+    # ... (保持 inputs 不变)
+
+defaults:
+  run:
+    # Windows 下建议默认使用 PowerShell 核心版
+    shell: pwsh 
+
+jobs:
+  build-wheel:
+    runs-on: ${{ inputs.runs-on }}
+    name: Build Windows wheel (${{ inputs.release-version }}-${{ inputs.cuda-version }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release-version }}
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      # 关键步骤：初始化 MSVC 编译器环境
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install CUDA ${{ inputs.cuda-version }}
+        if: ${{ inputs.cuda-version != 'cpu' }}
+        uses: Jimver/cuda-toolkit@v0.2.29
+        id: cuda-toolkit
+        with:
+          cuda: ${{ inputs.cuda-version }}
+          # Windows 下 method 建议使用 local 或由 action 自动处理
+          method: "local"
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+
+      - name: Install PyTorch and Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # 针对 Windows 的版本对齐
+          $CUDA_VER = "${{ inputs.cuda-version }}".Replace(".", "")
+          pip install torch==${{ inputs.torch-version }} --index-url https://download.pytorch.org/whl/cu$($CUDA_VER.Substring(0,3))
+          pip install setuptools==75.8.0 ninja packaging wheel
+
+      - name: Build wheel (Windows Special)
+        id: build_wheel
+        run: |
+          # 1. 设置 Windows 环境变量
+          $env:CUDA_HOME = $env:CUDA_PATH
+          $env:MAX_JOBS = "2" # Windows 显存管理更碎，建议限制并发
+          $env:FLASH_ATTENTION_FORCE_BUILD = "TRUE"
+          $env:FLASH_ATTENTION_FORCE_CXX11_ABI = "${{ inputs.cxx11_abi }}"
+          
+          # 2. 解决 Windows 下的编译常见报错
+          # 有些库在 Windows 下需要明确指定编译器路径
+          $env:CC = "cl.exe"
+          $env:CXX = "cl.exe"
+
+          # 3. 执行编译
+          python setup.py bdist_wheel --dist-dir=dist
+
+          # 4. 改名逻辑（适配 Windows 的环境变量语法）
+          $WHEEL_FILE = Get-ChildItem dist/*.whl | Select-Object -First 1
+          $TMP_NAME = "+cu${{ inputs.cuda-version }}torch${{ inputs.torch-version }}".Replace(".", "")
+          $NEW_NAME = $WHEEL_FILE.Name.Replace("-", "$TMP_NAME-") # 简化逻辑
+          Rename-Item $WHEEL_FILE.FullName -NewName $NEW_NAME
+          echo "wheel_name=$NEW_NAME" >> $env:GITHUB_ENV
+
+      - name: Upload Release Asset
+        if: inputs.upload-to-release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_current_release.outputs.upload_url }}
+          asset_path: ./dist/${{ env.wheel_name }}
+          asset_name: ${{ env.wheel_name }}
+          asset_content_type: application/octet-stream
